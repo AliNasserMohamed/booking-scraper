@@ -45,37 +45,75 @@ class BookingScraperIntegration:
     def _setup_driver(self):
         """Setup Chrome driver with anti-detection"""
         try:
-            log_path = "/chromedriver.log"
+            log_path = "/tmp/chromedriver.log"
             
             self._log_message("Starting Chrome driver...")
             
-            # Configure Chrome options - using the working configuration
+            # Configure Chrome options for Ubuntu server environment
             options = uc.ChromeOptions()
+            
+            # Essential arguments for server environments
+            options.add_argument("--headless")  # Required for server environments
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--disable-gpu")
             options.add_argument("--window-size=1920,1080")
             options.add_argument("--disable-blink-features=AutomationControlled")
             
-            # Initialize Chrome driver - using the working method
+            # Additional stability arguments for Ubuntu server
+            options.add_argument("--disable-extensions")
+            options.add_argument("--disable-plugins")
+            options.add_argument("--disable-images")
+            options.add_argument("--no-first-run")
+            options.add_argument("--no-default-browser-check")
+            options.add_argument("--disable-default-apps")
+            options.add_argument("--disable-web-security")
+            options.add_argument("--allow-running-insecure-content")
+            options.add_argument("--disable-background-timer-throttling")
+            options.add_argument("--disable-renderer-backgrounding")
+            options.add_argument("--disable-backgrounding-occluded-windows")
+            
+            # Try to detect Chrome binary location
+            chrome_paths = [
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium-browser",
+                "/usr/bin/chromium",
+                "/opt/google/chrome/chrome"
+            ]
+            
+            chrome_binary = None
+            for path in chrome_paths:
+                if os.path.exists(path):
+                    chrome_binary = path
+                    break
+            
+            if chrome_binary:
+                options.binary_location = chrome_binary
+                self._log_message(f"Using Chrome binary: {chrome_binary}")
+            else:
+                self._log_message("Chrome binary not found in standard locations, using system default")
+            
+            # Initialize Chrome driver with improved configuration
             self.driver = uc.Chrome(
                 options=options,
                 service_log_path=log_path,
-                version_main=None  # Auto-detect Chrome version
+                version_main=None,  # Auto-detect Chrome version
+                driver_executable_path=None  # Let undetected-chromedriver handle this
             )
             
             # Configure driver settings
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            self.driver.set_page_load_timeout(30)
-            self.driver.implicitly_wait(10)
+            self.driver.set_page_load_timeout(60)  # Increased timeout for server environments
+            self.driver.implicitly_wait(15)  # Increased wait time
             
             self._log_message("Chrome driver setup completed successfully")
             
         except Exception as e:
             self._log_message(f"Error setting up Chrome driver: {str(e)}", "ERROR")
             
-            # Print any Chrome driver logs
-            log_path = "/chromedriver.log"
+            # Print any Chrome driver logs for debugging
+            log_path = "/tmp/chromedriver.log"
             if os.path.exists(log_path):
                 try:
                     with open(log_path, 'r') as f:
@@ -84,6 +122,19 @@ class BookingScraperIntegration:
                         self._log_message(log_content, "ERROR")
                 except:
                     pass
+            
+            # Additional debugging information
+            self._log_message("Chrome binary detection results:", "ERROR")
+            chrome_paths = [
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium-browser",
+                "/usr/bin/chromium",
+                "/opt/google/chrome/chrome"
+            ]
+            for path in chrome_paths:
+                exists = os.path.exists(path)
+                self._log_message(f"  {path}: {'EXISTS' if exists else 'NOT FOUND'}", "ERROR")
             
             raise Exception(f"Could not initialize Chrome driver: {str(e)}")
 
