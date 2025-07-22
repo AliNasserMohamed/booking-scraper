@@ -127,7 +127,6 @@ dmypy.json
 *.db
 *.sqlite3
 *.log
-data/csv/*.csv
 logs/
 .DS_Store
 .vscode/
