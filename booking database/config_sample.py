@@ -16,9 +16,9 @@ DB_CONFIG = {
 # S3 configuration (optional, for image upload)
 # Set to None if you don't want to use S3 image upload
 S3_CONFIG = {
-    'access_key': 'YOUR_ACCESS_KEY_HERE',  # Replace with your actual S3 access key
-    'secret_key': 'YOUR_SECRET_KEY_HERE',  # Replace with your actual S3 secret key
-    'bucket_name': 'YOUR_BUCKET_NAME_HERE',  # Replace with your actual S3 bucket name
+    'access_key': 'AKIASG6MFOOFXQRVKWEA',  # Replace with your actual S3 access key
+    'secret_key': 'rPRP2KHC2fuNw3aqNcpNQoi20YK9TEta+PIcJZ6I',  # Replace with your actual S3 secret key
+    'bucket_name': 'bookingimages--eun1-az3--x-s3',  # Replace with your actual S3 bucket name
     'region': 'us-east-1'  # Replace with your actual S3 region
 }
 
