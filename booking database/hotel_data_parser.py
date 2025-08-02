@@ -558,14 +558,11 @@ class HotelDataParser:
     def parse_csv_file(self, csv_file_path: str) -> bool:
         """Parse the entire CSV file and insert data into database."""
         try:
-            # Read CSV file with proper handling of quoted fields
+            # Read CSV file with pandas - user confirmed it works fine
             logger.info(f"Reading CSV file: {csv_file_path}")
             df = pd.read_csv(
                 csv_file_path, 
                 encoding='utf-8',
-                quotechar='"',
-                escapechar='\\',
-                index_col=0,  # Skip the first column (index)
                 na_values=['', 'nan', 'null', 'None'],
                 keep_default_na=True
             )
