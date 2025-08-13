@@ -16,12 +16,11 @@ DB_CONFIG = {
 # S3 configuration (optional, for image upload)
 # Set to None if you don't want to use S3 image upload
 S3_CONFIG = {
-    'access_key': 'AKIASG6MFOOFXQRVKWEA',
+'access_key': 'AKIASG6MFOOFXQRVKWEA',
     'secret_key': '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',
     'bucket_name': 'bookingimages-public',
     'region': 'eu-north-1'
 }
-
 # To disable S3 image upload, uncomment the line below:
 # S3_CONFIG = None
 

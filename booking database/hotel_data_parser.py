@@ -46,7 +46,7 @@ class HotelDataParser:
                 's3',
                 aws_access_key_id=self.s3_config['access_key'],
                 aws_secret_access_key=self.s3_config['secret_key'],
-                region_name=self.s3_config.get('region', 'us-east-1')
+                region_name=self.s3_config['region']
             )
             logger.info("S3 client initialized successfully")
         except Exception as e:
@@ -83,12 +83,12 @@ class HotelDataParser:
                 Bucket=self.s3_config['bucket_name'],
                 Key=filename,
                 Body=response.content,
-                ContentType=f"image/{original_ext[1:]}",
+                ContentType=f"image/{original_ext[1:] if original_ext else 'jpeg'}",
                 ACL='public-read'
             )
             
             # Generate S3 URL
-            s3_url = f"https://{self.s3_config['bucket_name']}.s3.{self.s3_config.get('region', 'us-east-1')}.amazonaws.com/{filename}"
+            s3_url = f"https://{self.s3_config['bucket_name']}.s3.{self.s3_config['region']}.amazonaws.com/{filename}"
             
             logger.info(f"Successfully uploaded image {image_index + 1} for hotel {hotel_id}")
             return s3_url
@@ -607,22 +607,32 @@ def parse_hotels_from_csv(csv_file_path: str = 'sample_hotels.csv'):
         bool: True if successful, False otherwise
     """
     
-    # Database configuration
-    db_config = {
-        'host': '15.184.143.183',
-        'port': '3306',
-        'username': 'btd_secure',
-        'password': 'UvAbryxBIyBHAmkWyviMgQPT0q5lLVLc',
-        'database': 'btd_db'
-    }
-    
-    # S3 configuration (required for image upload) - Replace with your actual AWS credentials
-    s3_config ={
-    'access_key': 'AKIASG6MFOOFXQRVKWEA',
-    'secret_key': 'rPRP2KHC2fuNw3aqNcpNQoi20YK9TEta+PIcJZ6I',
-    'bucket_name': 'bookingimages-public',
-    'region': 'eu-north-1'
-}
+    # Try to import configuration from config.py, fallback to environment variables
+    try:
+        from config import DB_CONFIG, S3_CONFIG
+        db_config = DB_CONFIG
+        s3_config = S3_CONFIG
+        logger.info("✅ Using configuration from config.py")
+    except ImportError:
+        logger.warning("⚠️ config.py not found, using environment variables")
+        import os
+        
+        # Database configuration from environment variables
+        db_config = {
+            'host': os.getenv('DB_HOST', '15.184.143.183'),
+            'port': os.getenv('DB_PORT', '3306'),
+            'username': os.getenv('DB_USERNAME', 'btd_secure'),
+            'password': os.getenv('DB_PASSWORD', 'UvAbryxBIyBHAmkWyviMgQPT0q5lLVLc'),
+            'database': os.getenv('DB_DATABASE', 'btd_db')
+        }
+        
+        # S3 configuration from environment variables
+        s3_config = {
+            'access_key': os.getenv('AWS_ACCESS_KEY_ID', 'AKIASG6MFOOFXQRVKWEA'),
+            'secret_key': os.getenv('AWS_SECRET_ACCESS_KEY', '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'),
+            'bucket_name': os.getenv('S3_BUCKET_NAME', 'bookingimages-public'),
+            'region': os.getenv('AWS_REGION', 'eu-north-1')
+        }
     
     # Initialize parser
     parser = HotelDataParser(db_config, s3_config)
