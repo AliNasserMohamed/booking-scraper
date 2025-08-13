@@ -618,10 +618,10 @@ def parse_hotels_from_csv(csv_file_path: str = 'sample_hotels.csv'):
     
     # S3 configuration (required for image upload) - Replace with your actual AWS credentials
     s3_config ={
-    'access_key': 'AKIASG6MFOOFXQRVKWEA',  # Replace with your actual S3 access key
-    'secret_key': 'rPRP2KHC2fuNw3aqNcpNQoi20YK9TEta+PIcJZ6I',  # Replace with your actual S3 secret key
-    'bucket_name': 'bookingimages--eun1-az3--x-s3',  # Replace with your actual S3 bucket name
-    'region': 'us-east-1'  # Replace with your actual S3 region
+    'access_key': 'AKIASG6MFOOFXQRVKWEA',
+    'secret_key': 'rPRP2KHC2fuNw3aqNcpNQoi20YK9TEta+PIcJZ6I',
+    'bucket_name': 'bookingimages-public',
+    'region': 'eu-north-1'
 }
     
     # Initialize parser
