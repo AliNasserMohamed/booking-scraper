@@ -235,7 +235,6 @@ class HotelDataParser:
     def insert_hotel(self, hotel_data: Dict[str, Any]) -> int:
         """Insert hotel data and return hotel ID."""
         try:
-            # First insert the hotel to get its ID
             # Helper function to safely convert to numeric
             def safe_float(value):
                 if value is None or value == '' or pd.isna(value):
@@ -253,8 +252,9 @@ class HotelDataParser:
                 except (ValueError, TypeError):
                     return None
             
-            # Prepare hotel data (without property_id first)
+            # First insert the hotel without property_id (set to NULL initially)
             hotel_insert_data = (
+                None,  # property_id will be set later
                 hotel_data.get('title'),
                 hotel_data.get('address'),
                 hotel_data.get('region'),
@@ -270,9 +270,9 @@ class HotelDataParser:
             )
             
             insert_query = """
-                INSERT INTO hotels (title, address, region, postal_code, address_country, 
+                INSERT INTO hotels (property_id, title, address, region, postal_code, address_country, 
                                   latitude, longitude, description, stars, rating_value, rating_text, url)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             self.cursor.execute(insert_query, hotel_insert_data)

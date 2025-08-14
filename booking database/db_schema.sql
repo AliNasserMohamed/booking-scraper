@@ -214,8 +214,7 @@ ALTER TABLE `images`
 -- Indexes for table `properties`
 --
 ALTER TABLE `properties`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `type` (`type`);
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `rooms`
