@@ -180,37 +180,33 @@ class HotelDataParser:
                 logger.warning(f"Could not parse JSON: {json_string[:100]}...")
                 return None
     
-    def get_or_create_property(self, property_type: str = 'hotel') -> int:
-        """Get or create property ID for the given type."""
-        # Check if property type exists
-        self.cursor.execute("SELECT id FROM properties WHERE type = %s", (property_type,))
+    def get_or_create_property(self, property_type: str = 'hotel', hotel_id: int = None) -> int:
+        """Get or create property ID for the given type using hotel ID."""
+        if hotel_id is None:
+            raise ValueError("hotel_id is required for property creation")
+            
+        # Check if property with this ID exists
+        self.cursor.execute("SELECT id FROM properties WHERE id = %s", (hotel_id,))
         result = self.cursor.fetchone()
         
         if result:
             return result[0]
         else:
-            # Create new property type
+            # Create new property with the hotel ID
             self.cursor.execute(
-                "INSERT INTO properties (type) VALUES (%s)",
-                (property_type,)
+                "INSERT INTO properties (id, type) VALUES (%s, %s)",
+                (hotel_id, property_type)
             )
-            return self.cursor.lastrowid
+            return hotel_id
     
-    def get_or_create_facility(self, facility_name: str, icon_svg: str = None, category: str = None) -> int:
-        """Get or create facility ID for the given facility."""
-        # Check if facility exists
-        self.cursor.execute("SELECT id FROM facilities WHERE name = %s", (facility_name,))
-        result = self.cursor.fetchone()
-        
-        if result:
-            return result[0]
-        else:
-            # Create new facility
-            self.cursor.execute(
-                "INSERT INTO facilities (name, category, icon_svg) VALUES (%s, %s, %s)",
-                (facility_name, category, icon_svg)
-            )
-            return self.cursor.lastrowid
+    def create_facility_for_hotel(self, facility_name: str, hotel_id: int, icon_svg: str = None, category: str = None, parent_facility_id: int = None) -> int:
+        """Create facility for a specific hotel without duplicate checking."""
+        # Always create new facility for this hotel
+        self.cursor.execute(
+            "INSERT INTO facilities (name, category, parent_facility_id, hotel_id, icon_svg) VALUES (%s, %s, %s, %s, %s)",
+            (facility_name, category, parent_facility_id, hotel_id, icon_svg)
+        )
+        return self.cursor.lastrowid
     
     def delete_existing_hotel(self, hotel_url: str):
         """Delete existing hotel and related data based on URL."""
@@ -239,8 +235,7 @@ class HotelDataParser:
     def insert_hotel(self, hotel_data: Dict[str, Any]) -> int:
         """Insert hotel data and return hotel ID."""
         try:
-            property_id = self.get_or_create_property('hotel')
-            
+            # First insert the hotel to get its ID
             # Helper function to safely convert to numeric
             def safe_float(value):
                 if value is None or value == '' or pd.isna(value):
@@ -258,9 +253,8 @@ class HotelDataParser:
                 except (ValueError, TypeError):
                     return None
             
-            # Prepare hotel data
+            # Prepare hotel data (without property_id first)
             hotel_insert_data = (
-                property_id,
                 hotel_data.get('title'),
                 hotel_data.get('address'),
                 hotel_data.get('region'),
@@ -276,13 +270,22 @@ class HotelDataParser:
             )
             
             insert_query = """
-                INSERT INTO hotels (property_id, title, address, region, postal_code, address_country, 
+                INSERT INTO hotels (title, address, region, postal_code, address_country, 
                                   latitude, longitude, description, stars, rating_value, rating_text, url)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             self.cursor.execute(insert_query, hotel_insert_data)
             hotel_id = self.cursor.lastrowid
+            
+            # Now create the property with the hotel ID
+            property_id = self.get_or_create_property('hotel', hotel_id)
+            
+            # Update the hotel with the property_id
+            self.cursor.execute(
+                "UPDATE hotels SET property_id = %s WHERE id = %s",
+                (property_id, hotel_id)
+            )
             logger.info(f"Inserted hotel with ID: {hotel_id}")
             return hotel_id
             
@@ -321,7 +324,7 @@ class HotelDataParser:
         return 'sub'
     
     def insert_hotel_facilities(self, hotel_id: int, most_famous_facilities: Dict, all_facilities: Dict):
-        """Insert hotel facilities with enhanced handling."""
+        """Insert hotel facilities with enhanced parent-child handling."""
         try:
             # Process most famous facilities
             if most_famous_facilities:
@@ -330,15 +333,15 @@ class HotelDataParser:
                     if facility_name:
                         # Handle null or empty icons
                         icon = icon if icon and icon != 'null' and icon.strip() else None
-                        facility_id = self.get_or_create_facility(facility_name, icon, 'famous')
+                        facility_id = self.create_facility_for_hotel(facility_name, hotel_id, icon, 'famous')
                         
                         # Insert hotel-facility relationship
                         self.cursor.execute(
-                            "INSERT INTO hotel_facility (hotel_id, facility_id, is_most_famous) VALUES (%s, %s, %s)",
-                            (hotel_id, facility_id, 1)
+                            "INSERT INTO hotel_facility (hotel_id, facility_id, is_most_famous, is_sub_facility, parent_facility_id) VALUES (%s, %s, %s, %s, %s)",
+                            (hotel_id, facility_id, 1, 0, None)
                         )
             
-            # Process all facilities with enhanced categorization
+            # Process all facilities with parent-child relationships
             if all_facilities:
                 for category, facility_data in all_facilities.items():
                     if isinstance(facility_data, dict):
@@ -348,62 +351,47 @@ class HotelDataParser:
                         # Handle null or empty icons
                         icon = icon if icon and icon != 'null' and icon.strip() else None
                         
-                        # Insert main category facility
+                        # Create main category facility for this hotel
                         if category_name:
                             category_type = self.categorize_facility(category_name, facility_data)
-                            facility_id = self.get_or_create_facility(category_name, icon, category_type)
+                            main_facility_id = self.create_facility_for_hotel(category_name, hotel_id, icon, category_type)
                             
-                            # Check if not already inserted as most famous
+                            # Insert main facility relationship
                             self.cursor.execute(
-                                "SELECT COUNT(*) FROM hotel_facility WHERE hotel_id = %s AND facility_id = %s",
-                                (hotel_id, facility_id)
+                                "INSERT INTO hotel_facility (hotel_id, facility_id, is_most_famous, is_sub_facility, parent_facility_id) VALUES (%s, %s, %s, %s, %s)",
+                                (hotel_id, main_facility_id, 0, 0, None)
                             )
                             
-                            if self.cursor.fetchone()[0] == 0:
-                                self.cursor.execute(
-                                    "INSERT INTO hotel_facility (hotel_id, facility_id, is_most_famous) VALUES (%s, %s, %s)",
-                                    (hotel_id, facility_id, 0)
-                                )
-                        
-                        # Process sub-facilities
-                        sub_facilities = facility_data.get('sub_facilities', {})
-                        if isinstance(sub_facilities, dict):
-                            for sub_facility_name, sub_icon in sub_facilities.items():
-                                sub_facility_name = sub_facility_name.strip()
-                                if sub_facility_name:
-                                    # Handle null or empty icons
-                                    sub_icon = sub_icon if sub_icon and sub_icon != 'null' and sub_icon.strip() else None
-                                    sub_facility_id = self.get_or_create_facility(sub_facility_name, sub_icon, 'sub')
-                                    
-                                    # Check if not already inserted
-                                    self.cursor.execute(
-                                        "SELECT COUNT(*) FROM hotel_facility WHERE hotel_id = %s AND facility_id = %s",
-                                        (hotel_id, sub_facility_id)
-                                    )
-                                    
-                                    if self.cursor.fetchone()[0] == 0:
+                            # Process sub-facilities
+                            sub_facilities = facility_data.get('sub_facilities', {})
+                            if isinstance(sub_facilities, dict):
+                                for sub_facility_name, sub_icon in sub_facilities.items():
+                                    sub_facility_name = sub_facility_name.strip()
+                                    if sub_facility_name:
+                                        # Handle null or empty icons
+                                        sub_icon = sub_icon if sub_icon and sub_icon != 'null' and sub_icon.strip() else None
+                                        
+                                        # Create sub-facility with parent reference
+                                        sub_facility_id = self.create_facility_for_hotel(sub_facility_name, hotel_id, sub_icon, 'sub', main_facility_id)
+                                        
+                                        # Insert sub-facility relationship
                                         self.cursor.execute(
-                                            "INSERT INTO hotel_facility (hotel_id, facility_id, is_most_famous) VALUES (%s, %s, %s)",
-                                            (hotel_id, sub_facility_id, 0)
+                                            "INSERT INTO hotel_facility (hotel_id, facility_id, is_most_famous, is_sub_facility, parent_facility_id) VALUES (%s, %s, %s, %s, %s)",
+                                            (hotel_id, sub_facility_id, 0, 1, main_facility_id)
                                         )
+                    
                     elif facility_data is None or facility_data == 'null':
                         # Handle null facilities - categorize them appropriately
                         category_name = category.strip()
                         if category_name:
                             category_type = self.categorize_facility(category_name, None)
-                            facility_id = self.get_or_create_facility(category_name, None, category_type)
+                            facility_id = self.create_facility_for_hotel(category_name, hotel_id, None, category_type)
                             
-                            # Check if not already inserted
+                            # Insert facility relationship
                             self.cursor.execute(
-                                "SELECT COUNT(*) FROM hotel_facility WHERE hotel_id = %s AND facility_id = %s",
-                                (hotel_id, facility_id)
+                                "INSERT INTO hotel_facility (hotel_id, facility_id, is_most_famous, is_sub_facility, parent_facility_id) VALUES (%s, %s, %s, %s, %s)",
+                                (hotel_id, facility_id, 0, 0, None)
                             )
-                            
-                            if self.cursor.fetchone()[0] == 0:
-                                self.cursor.execute(
-                                    "INSERT INTO hotel_facility (hotel_id, facility_id, is_most_famous) VALUES (%s, %s, %s)",
-                                    (hotel_id, facility_id, 0)
-                                )
             
             logger.info(f"Inserted facilities for hotel ID: {hotel_id}")
             

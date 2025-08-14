@@ -12,6 +12,11 @@ from typing import Dict, List, Optional, Any
 import argparse
 import os
 import csv
+import sys
+
+# Increase CSV field size limit to handle large fields
+# Set to 10MB (10 * 1024 * 1024 bytes) which should be sufficient for most fields
+csv.field_size_limit(10485760)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,23 +44,29 @@ class CSVToJSONConverter:
             return json.loads(json_string)
         except (json.JSONDecodeError, TypeError):
             try:
-                # Try using ast.literal_eval for Python-like strings
-                return ast.literal_eval(json_string)
-            except (ValueError, SyntaxError):
+                # Handle multiline JSON by normalizing newlines
+                # Replace literal newlines with escaped ones
+                normalized_json = json_string.replace('\n', '\\n').replace('\r', '\\r')
+                return json.loads(normalized_json)
+            except (json.JSONDecodeError, TypeError):
                 try:
-                    # Handle cases where outer quotes might be missing
-                    if not json_string.startswith(('{', '[', '"')):
-                        return None
+                    # Try using ast.literal_eval for Python-like strings
+                    return ast.literal_eval(json_string)
+                except (ValueError, SyntaxError):
+                    try:
+                        # Handle cases where outer quotes might be missing
+                        if not json_string.startswith(('{', '[', '"')):
+                            return None
+                        
+                        # Try with eval as last resort (be careful with this in production)
+                        # Only for trusted data sources
+                        if json_string.startswith(('{', '[')):
+                            return eval(json_string)
+                    except:
+                        pass
                     
-                    # Try with eval as last resort (be careful with this in production)
-                    # Only for trusted data sources
-                    if json_string.startswith(('{', '[')):
-                        return eval(json_string)
-                except:
-                    pass
-                
-                logger.warning(f"Could not parse JSON: {json_string[:100]}...")
-                return None
+                    logger.warning(f"Could not parse JSON: {json_string[:100]}...")
+                    return None
     
     def safe_get_value(self, row: Dict, key: str, default=None):
         """Safely get value from row dictionary, handling NaN and empty values."""
@@ -128,6 +139,85 @@ class CSVToJSONConverter:
         
         return processed
     
+    def process_rooms(self, rooms_data: List) -> List[Dict]:
+        """Process rooms data to match the expected JSON format."""
+        if not rooms_data or not isinstance(rooms_data, list):
+            return []
+        
+        processed_rooms = []
+        
+        for room_data in rooms_data:
+            if not isinstance(room_data, dict):
+                continue
+                
+            try:
+                # Build room object with proper structure
+                room = {
+                    "room_name": self.safe_get_value(room_data, 'room_name'),
+                    "bed_type": self.safe_get_value(room_data, 'bed_type'),
+                    "adult_count": self.safe_get_numeric(room_data, 'adult_count', is_float=False),
+                    "children_count": self.safe_get_numeric(room_data, 'children_count', is_float=False)
+                }
+                
+                # Process content_text object
+                content_text = room_data.get('content_text', {})
+                if isinstance(content_text, dict):
+                    processed_content = {}
+                    
+                    # Handle basic text fields
+                    for key in ['مساحة الغرفة', 'وصف الغرفة', 'سياسة التدخين']:
+                        value = content_text.get(key)
+                        if value is not None:
+                            processed_content[key] = str(value).strip() if value else ""
+                    
+                    # Handle array fields  
+                    for key in ['الحمام', 'المرافق المتوفرة', 'المطبخ', 'الإطلالة']:
+                        value = content_text.get(key, [])
+                        if isinstance(value, list):
+                            processed_content[key] = [str(item).strip() for item in value if item]
+                        elif isinstance(value, str) and value.strip():
+                            # Handle case where it might be a string instead of list
+                            processed_content[key] = [value.strip()]
+                        else:
+                            processed_content[key] = []
+                    
+                    # Handle المعلومات المهمه (important info with SVGs)
+                    important_info = content_text.get('المعلومات المهمه', {})
+                    if isinstance(important_info, dict):
+                        processed_info = {}
+                        for info_key, svg_value in important_info.items():
+                            if not svg_value or svg_value == 'null':
+                                svg_value = '<svg viewbox="0 0 24 24" width="50px" xmlns="http://www.w3.org/2000/svg"><path d="M22.5 12c0 5.799-4.701 10.5-10.5 10.5S1.5 17.799 1.5 12 6.201 1.5 12 1.5 22.5 6.201 22.5 12m1.5 0c0-6.627-5.373-12-12-12S0 5.373 0 12s5.373 12 12 12 12-5.373 12-12m-9.75-1.5a1.5 1.5 0 0 1-1.5 1.5H10.5l.75.75v-4.5L10.5 9h2.25a1.5 1.5 0 0 1 1.5 1.5m1.5 0a3 3 0 0 0-3-3H10.5a.75.75 0 0 0-.75.75v4.5c0 .414.336.75.75.75h2.25a3 3 0 0 0 3-3m-4.5 6.75v-4.5a.75.75 0 0 0-1.5 0v4.5a.75.75 0 0 0 1.5 0"></path></svg>'
+                            processed_info[info_key] = svg_value
+                        processed_content['المعلومات المهمه'] = processed_info
+                    else:
+                        processed_content['المعلومات المهمه'] = {}
+                    
+                    # Handle images_urls
+                    images_urls = content_text.get('images_urls', [])
+                    if isinstance(images_urls, list):
+                        processed_content['images_urls'] = [str(url).strip() for url in images_urls if url]
+                    else:
+                        processed_content['images_urls'] = []
+                    
+                    room["content_text"] = processed_content
+                else:
+                    room["content_text"] = {}
+                
+                # Remove None values from room object
+                cleaned_room = {}
+                for k, v in room.items():
+                    if v is not None:
+                        cleaned_room[k] = v
+                
+                processed_rooms.append(cleaned_room)
+                
+            except Exception as e:
+                logger.warning(f"Error processing room data: {e}")
+                continue
+        
+        return processed_rooms
+    
     def convert_row_to_json(self, row: Dict[str, Any]) -> Dict[str, Any]:
         """Convert a single CSV row to JSON format."""
         try:
@@ -135,6 +225,7 @@ class CSVToJSONConverter:
             image_links = self.safe_json_loads(self.safe_get_value(row, 'image_links', '[]'))
             most_famous_facilities = self.safe_json_loads(self.safe_get_value(row, 'most_famous_facilities', '{}'))
             all_facilities = self.safe_json_loads(self.safe_get_value(row, 'all_facilities', '{}'))
+            rooms = self.safe_json_loads(self.safe_get_value(row, 'rooms', '[]'))
             
             # Build the hotel JSON object in the exact format of booking_hotels_data.json
             hotel_json = {
@@ -149,7 +240,8 @@ class CSVToJSONConverter:
                 "stars": self.safe_get_numeric(row, 'stars', is_float=False),
                 "image_links": image_links if isinstance(image_links, list) else [],
                 "most_famous_facilities": self.process_most_famous_facilities(most_famous_facilities),
-                "all_facilities": self.process_facilities(all_facilities)
+                "all_facilities": self.process_facilities(all_facilities),
+                "rooms": self.process_rooms(rooms if isinstance(rooms, list) else [])
             }
             
             # Add optional fields only if they exist and are not empty
