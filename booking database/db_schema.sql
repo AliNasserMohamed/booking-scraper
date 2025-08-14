@@ -31,6 +31,8 @@ CREATE TABLE `facilities` (
   `id` int(11) NOT NULL,
   `name` varchar(255) NOT NULL,
   `category` varchar(100) DEFAULT NULL,
+  `parent_facility_id` int(11) DEFAULT NULL,
+  `hotel_id` int(11) DEFAULT NULL,
   `icon_svg` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
@@ -85,7 +87,9 @@ INSERT INTO `hotels` (`id`, `property_id`, `title`, `address`, `region`, `postal
 CREATE TABLE `hotel_facility` (
   `hotel_id` int(11) NOT NULL,
   `facility_id` int(11) NOT NULL,
-  `is_most_famous` tinyint(1) DEFAULT 0
+  `is_most_famous` tinyint(1) DEFAULT 0,
+  `is_sub_facility` tinyint(1) DEFAULT 0,
+  `parent_facility_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -177,7 +181,8 @@ INSERT INTO `rooms` (`id`, `hotel_id`, `room_name`, `bed_type`, `adult_count`, `
 --
 ALTER TABLE `facilities`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `name` (`name`);
+  ADD KEY `idx_facilities_parent` (`parent_facility_id`),
+  ADD KEY `idx_facilities_hotel_id` (`hotel_id`);
 
 --
 -- Indexes for table `hotels`
@@ -194,7 +199,8 @@ ALTER TABLE `hotels`
 ALTER TABLE `hotel_facility`
   ADD PRIMARY KEY (`hotel_id`,`facility_id`),
   ADD KEY `facility_id` (`facility_id`),
-  ADD KEY `idx_hotel_facility` (`hotel_id`,`facility_id`);
+  ADD KEY `idx_hotel_facility` (`hotel_id`,`facility_id`),
+  ADD KEY `idx_hotel_facility_parent` (`parent_facility_id`);
 
 --
 -- Indexes for table `images`
@@ -241,10 +247,10 @@ ALTER TABLE `images`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
--- AUTO_INCREMENT for table `properties`
+-- Properties table - ID is now manually managed to match hotel ID
 --
 ALTER TABLE `properties`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(11) NOT NULL;
 
 --
 -- AUTO_INCREMENT for table `rooms`
@@ -263,11 +269,19 @@ ALTER TABLE `hotels`
   ADD CONSTRAINT `hotels_ibfk_1` FOREIGN KEY (`property_id`) REFERENCES `properties` (`id`) ON DELETE SET NULL;
 
 --
+-- Constraints for table `facilities`
+--
+ALTER TABLE `facilities`
+  ADD CONSTRAINT `facilities_parent_fk` FOREIGN KEY (`parent_facility_id`) REFERENCES `facilities` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `facilities_hotel_fk` FOREIGN KEY (`hotel_id`) REFERENCES `hotels` (`id`) ON DELETE CASCADE;
+
+--
 -- Constraints for table `hotel_facility`
 --
 ALTER TABLE `hotel_facility`
   ADD CONSTRAINT `hotel_facility_ibfk_1` FOREIGN KEY (`hotel_id`) REFERENCES `hotels` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `hotel_facility_ibfk_2` FOREIGN KEY (`facility_id`) REFERENCES `facilities` (`id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `hotel_facility_ibfk_2` FOREIGN KEY (`facility_id`) REFERENCES `facilities` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `hotel_facility_parent_fk` FOREIGN KEY (`parent_facility_id`) REFERENCES `facilities` (`id`) ON DELETE SET NULL;
 
 --
 -- Constraints for table `images`
