@@ -146,7 +146,7 @@ class HotelDataParser:
         logger.info("Database connection closed")
     
     def safe_json_loads(self, json_string: str) -> Any:
-        """Safely parse JSON string, handling different formats."""
+        """Safely parse JSON string, handling different formats and newline characters."""
         if pd.isna(json_string) or json_string == '' or json_string is None or json_string == 'nan':
             return None
             
@@ -156,6 +156,9 @@ class HotelDataParser:
         # Handle empty or null-like strings
         if json_string in ['', '{}', '[]', 'null', 'None', 'nan']:
             return {} if json_string == '{}' else ([] if json_string == '[]' else None)
+        
+        # Fix newline and carriage return characters that break JSON parsing
+        json_string = json_string.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
             
         try:
             # Try direct JSON parsing first

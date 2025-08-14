@@ -18,12 +18,16 @@ ALTER TABLE `properties`
 AUTO_INCREMENT = 1;
 
     -- ========================================
-    -- 2. FACILITIES TABLE CHANGES
-    -- ========================================
+-- 2. FACILITIES TABLE CHANGES
+-- ========================================
 
-    -- Add parent_facility_id to facilities table to support hierarchy
-    ALTER TABLE `facilities` 
-    ADD COLUMN `parent_facility_id` int(11) DEFAULT NULL AFTER `category`;
+-- Remove UNIQUE constraint on name field since each hotel can have same facility names
+ALTER TABLE `facilities` 
+DROP INDEX IF EXISTS `name`;
+
+-- Add parent_facility_id to facilities table to support hierarchy
+ALTER TABLE `facilities` 
+ADD COLUMN `parent_facility_id` int(11) DEFAULT NULL AFTER `category`;
 
     -- Add hotel_id to facilities table to associate facilities with specific hotels
     ALTER TABLE `facilities` 
