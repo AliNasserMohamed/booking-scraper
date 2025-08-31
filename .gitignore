@@ -133,4 +133,8 @@ logs/
 .idea/
 
 # Chrome driver
-chromedriver* 
+chromedriver*
+
+# Large CSV files
+booking database/sample_hotels.csv
+*.csv 
