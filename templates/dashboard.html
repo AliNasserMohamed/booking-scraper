@@ -39,9 +39,21 @@
         .status-stopped { background-color: #fdcb6e; color: #2d3436; }
         .scraping-options {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 15px;
             margin-bottom: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .scraping-options {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .scraping-options {
+                grid-template-columns: 1fr;
+            }
         }
         .scraping-option-card {
             background: white;
@@ -221,6 +233,13 @@
                                 </div>
                                 <h5>Hotels Only</h5>
                                 <p>Only scrape hotel data from existing CSV</p>
+                            </div>
+                            <div class="scraping-option-card" id="option5" onclick="startScraping('parse-sample')">
+                                <div class="icon">
+                                    <i class="fas fa-database"></i>
+                                </div>
+                                <h5>Parse Sample Hotels</h5>
+                                <p>Parse sample_hotels.csv data directly to database</p>
                             </div>
                         </div>
                     </div>
@@ -455,6 +474,10 @@
                 case 'hotels':
                     endpoint = '/api/orchestrator/hotel-scraping';
                     message = 'Hotel data scraping only';
+                    break;
+                case 'parse-sample':
+                    endpoint = '/api/parse-sample-hotels';
+                    message = 'Parse sample hotels CSV data to database';
                     break;
                 default:
                     alert('Invalid scraping option');

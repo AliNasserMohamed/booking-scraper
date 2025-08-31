@@ -204,6 +204,72 @@ async def _run_hotel_scraping_task(job_id: int, orchestrator):
         except Exception as commit_error:
             logger.error(f"Error updating job status after failure: {commit_error}")
 
+async def _run_sample_hotels_parsing_task(job_id: int):
+    """Background task for parsing sample hotels CSV"""
+    session = SessionLocal()
+    try:
+        # Update job status to RUNNING
+        job = session.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
+        if job:
+            job.status = "RUNNING"
+            job.message = "Parsing sample hotels CSV data..."
+            job.progress = 0.0
+            session.commit()
+            logger.info(f"Job {job_id} status updated to RUNNING")
+        session.close()
+        
+        # Import and run the hotel data parser
+        logger.info(f"Starting sample hotels parsing for job {job_id} in thread pool")
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Import the parser function dynamically
+            import sys
+            import os
+            import importlib.util
+            
+            # Add the booking database directory to path and import the module
+            parser_path = os.path.join(os.path.dirname(__file__), 'booking database', 'hotel_data_parser.py')
+            spec = importlib.util.spec_from_file_location("hotel_data_parser", parser_path)
+            parser_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(parser_module)
+            
+            # Run the parser with the sample_hotels.csv file
+            csv_file_path = os.path.join('booking database', 'sample_hotels.csv')
+            success = await loop.run_in_executor(
+                executor,
+                parser_module.parse_hotels_from_csv,
+                csv_file_path
+            )
+        
+        # Update job status based on result
+        session = SessionLocal()
+        job = session.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
+        if job:
+            if success:
+                job.status = "COMPLETED"
+                job.message = "Sample hotels parsing finished successfully"
+                job.progress = 100.0
+                logger.info(f"Job {job_id} completed successfully")
+            else:
+                job.status = "FAILED"
+                job.message = "Sample hotels parsing failed"
+                logger.error(f"Job {job_id} failed")
+            session.commit()
+        session.close()
+        
+    except Exception as e:
+        logger.error(f"Error in sample hotels parsing task {job_id}: {e}")
+        try:
+            session = SessionLocal()
+            job = session.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
+            if job:
+                job.status = "FAILED"
+                job.message = f"Sample hotels parsing failed: {str(e)}"
+                session.commit()
+            session.close()
+        except Exception as commit_error:
+            logger.error(f"Error updating job status after failure: {commit_error}")
+
 @app.get("/")
 async def dashboard():
     """Serve the dashboard HTML page"""
@@ -459,47 +525,40 @@ async def start_complete_scraping(
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db)
 ):
-    """Start complete scraping process (links + hotel data)"""
+    """Parse sample hotels CSV data to database"""
     try:
         # Check if there's already a running job
         running_job = db.query(ScrapingJob).filter(ScrapingJob.status == "RUNNING").first()
         if running_job:
-            raise HTTPException(status_code=400, detail="Another scraping job is already running")
-        
-        # Create orchestrator job
-        from services.main_scraper_orchestrator import MainScraperOrchestrator
-        orchestrator = MainScraperOrchestrator()
+            raise HTTPException(status_code=400, detail="Another parsing job is already running")
         
         # Create job record
         job = ScrapingJob(
             status="PENDING",
             urls_count=0,
-            message=f"Complete scraping process started (update_links={update_links})",
+            message="Parsing sample hotels CSV data (Complete Scraping)",
             progress=0.0
         )
         db.add(job)
         db.commit()
         db.refresh(job)
         
-        logger.info(f"Created job {job.id} with status PENDING")
+        logger.info(f"Created sample hotels parsing job {job.id} with status PENDING")
         
         # Start background task
         if background_tasks:
             background_tasks.add_task(
-                _run_complete_scraping_task,
-                job.id,
-                update_links,
-                orchestrator
+                _run_sample_hotels_parsing_task,
+                job.id
             )
         
         return {
-            "message": "Complete scraping process started",
-            "job_id": job.id,
-            "update_links": update_links
+            "message": "Sample hotels parsing process started (Complete Scraping)",
+            "job_id": job.id
         }
         
     except Exception as e:
-        logger.error(f"Error starting complete scraping: {e}")
+        logger.error(f"Error starting sample hotels parsing: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/api/orchestrator/link-scraping")
@@ -507,44 +566,40 @@ async def start_link_scraping(
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db)
 ):
-    """Start link scraping only"""
+    """Parse sample hotels CSV data to database"""
     try:
         # Check if there's already a running job
         running_job = db.query(ScrapingJob).filter(ScrapingJob.status == "RUNNING").first()
         if running_job:
-            raise HTTPException(status_code=400, detail="Another scraping job is already running")
-        
-        from services.main_scraper_orchestrator import MainScraperOrchestrator
-        orchestrator = MainScraperOrchestrator()
+            raise HTTPException(status_code=400, detail="Another parsing job is already running")
         
         # Create job record
         job = ScrapingJob(
             status="PENDING",
             urls_count=0,
-            message="Link scraping process started",
+            message="Parsing sample hotels CSV data (Links Only)",
             progress=0.0
         )
         db.add(job)
         db.commit()
         db.refresh(job)
         
-        logger.info(f"Created job {job.id} with status PENDING")
+        logger.info(f"Created sample hotels parsing job {job.id} with status PENDING")
         
         # Start background task
         if background_tasks:
             background_tasks.add_task(
-                _run_link_scraping_task,
-                job.id,
-                orchestrator
+                _run_sample_hotels_parsing_task,
+                job.id
             )
         
         return {
-            "message": "Link scraping process started",
+            "message": "Sample hotels parsing process started (Links Only)",
             "job_id": job.id
         }
         
     except Exception as e:
-        logger.error(f"Error starting link scraping: {e}")
+        logger.error(f"Error starting sample hotels parsing: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/api/orchestrator/hotel-scraping")
@@ -552,44 +607,81 @@ async def start_hotel_scraping(
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db)
 ):
-    """Start hotel data scraping from existing CSV"""
+    """Parse sample hotels CSV data to database"""
     try:
         # Check if there's already a running job
         running_job = db.query(ScrapingJob).filter(ScrapingJob.status == "RUNNING").first()
         if running_job:
-            raise HTTPException(status_code=400, detail="Another scraping job is already running")
-        
-        from services.main_scraper_orchestrator import MainScraperOrchestrator
-        orchestrator = MainScraperOrchestrator()
+            raise HTTPException(status_code=400, detail="Another parsing job is already running")
         
         # Create job record
         job = ScrapingJob(
             status="PENDING",
             urls_count=0,
-            message="Hotel data scraping process started",
+            message="Parsing sample hotels CSV data (Hotels Only)",
             progress=0.0
         )
         db.add(job)
         db.commit()
         db.refresh(job)
         
-        logger.info(f"Created job {job.id} with status PENDING")
+        logger.info(f"Created sample hotels parsing job {job.id} with status PENDING")
         
         # Start background task
         if background_tasks:
             background_tasks.add_task(
-                _run_hotel_scraping_task,
-                job.id,
-                orchestrator
+                _run_sample_hotels_parsing_task,
+                job.id
             )
         
         return {
-            "message": "Hotel data scraping process started",
+            "message": "Sample hotels parsing process started (Hotels Only)",
             "job_id": job.id
         }
         
     except Exception as e:
-        logger.error(f"Error starting hotel scraping: {e}")
+        logger.error(f"Error starting sample hotels parsing: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/api/parse-sample-hotels")
+async def parse_sample_hotels(
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db)
+):
+    """Parse sample_hotels.csv data directly into database"""
+    try:
+        # Check if there's already a running job
+        running_job = db.query(ScrapingJob).filter(ScrapingJob.status == "RUNNING").first()
+        if running_job:
+            raise HTTPException(status_code=400, detail="Another parsing job is already running")
+        
+        # Create job record
+        job = ScrapingJob(
+            status="PENDING",
+            urls_count=0,
+            message="Parsing sample hotels CSV data",
+            progress=0.0
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        
+        logger.info(f"Created sample hotels parsing job {job.id} with status PENDING")
+        
+        # Start background task
+        if background_tasks:
+            background_tasks.add_task(
+                _run_sample_hotels_parsing_task,
+                job.id
+            )
+        
+        return {
+            "message": "Sample hotels parsing process started",
+            "job_id": job.id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting sample hotels parsing: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/api/orchestrator/complete-scraping-force")
@@ -597,45 +689,40 @@ async def start_complete_scraping_force(
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db)
 ):
-    """Start complete scraping process with forced link update"""
+    """Parse sample hotels CSV data to database"""
     try:
         # Check if there's already a running job
         running_job = db.query(ScrapingJob).filter(ScrapingJob.status == "RUNNING").first()
         if running_job:
-            raise HTTPException(status_code=400, detail="Another scraping job is already running")
-        
-        from services.main_scraper_orchestrator import MainScraperOrchestrator
-        orchestrator = MainScraperOrchestrator()
+            raise HTTPException(status_code=400, detail="Another parsing job is already running")
         
         # Create job record
         job = ScrapingJob(
             status="PENDING",
             urls_count=0,
-            message="Complete scraping process started (force link update)",
+            message="Parsing sample hotels CSV data (Complete Scraping Force)",
             progress=0.0
         )
         db.add(job)
         db.commit()
         db.refresh(job)
         
-        logger.info(f"Created job {job.id} with status PENDING")
+        logger.info(f"Created sample hotels parsing job {job.id} with status PENDING")
         
         # Start background task
         if background_tasks:
             background_tasks.add_task(
-                _run_complete_scraping_task,
-                job.id,
-                True,  # Force update links
-                orchestrator
+                _run_sample_hotels_parsing_task,
+                job.id
             )
         
         return {
-            "message": "Complete scraping process started (force link update)",
+            "message": "Sample hotels parsing process started (Complete Scraping Force)",
             "job_id": job.id
         }
         
     except Exception as e:
-        logger.error(f"Error starting complete scraping: {e}")
+        logger.error(f"Error starting sample hotels parsing: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/export/hotels")

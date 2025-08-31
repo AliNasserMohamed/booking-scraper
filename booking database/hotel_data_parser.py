@@ -21,6 +21,7 @@ import uuid
 import os
 from urllib.parse import urlparse
 import time
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -598,6 +599,13 @@ def parse_hotels_from_csv(csv_file_path: str = 'sample_hotels.csv'):
         bool: True if successful, False otherwise
     """
     
+    logger.info(f"🚀 Starting hotel data parsing from: {csv_file_path}")
+    
+    # Ensure the CSV file exists
+    if not os.path.exists(csv_file_path):
+        logger.error(f"❌ CSV file not found: {csv_file_path}")
+        return False
+    
     # Try to import configuration from config.py, fallback to environment variables
     try:
         from config import DB_CONFIG, S3_CONFIG
@@ -606,7 +614,6 @@ def parse_hotels_from_csv(csv_file_path: str = 'sample_hotels.csv'):
         logger.info("✅ Using configuration from config.py")
     except ImportError:
         logger.warning("⚠️ config.py not found, using environment variables")
-        import os
         
         # Database configuration from environment variables
         db_config = {
